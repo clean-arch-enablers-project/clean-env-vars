@@ -10,7 +10,7 @@ This concept defines how an application retrieves environment variables and conv
 
 A variable is identified by name and supplied as text. The application declares the type it expects and how absence should be handled.
 
-The same API can resolve named values through a configurable chain of providers, allowing configuration to come from the process environment, an external configuration service, or an application-defined source. This describes the intended contract; implementations are not yet available.
+The environment-variable API can also resolve named configuration values through a configurable chain of providers, allowing configuration to come from the process environment, an external configuration service, or an application-defined source. This describes the intended contract; implementations are not yet available.
 
 <br>
 
@@ -28,7 +28,7 @@ This approach works in a script, a command-line tool, or a framework-based appli
 
 A **provider** looks up a named value in a particular source. Beyond the built-in environment provider, applications can supply custom providers backed by their chosen clients or application logic. A provider that retrieves values from AWS Systems Manager Parameter Store is one example of a custom provider, rather than a required or built-in integration.
 
-Each programming-language implementation must provide a built-in provider that reads the runtime's actual environment variables. This is the default source when the caller does not configure a provider chain, and it can also be included in a custom chain at the desired position.
+Each programming-language implementation must provide a built-in provider that reads the runtime's actual environment variables. The built-in environment provider is the default source when the caller does not configure a provider chain. The caller can also include that provider in a custom chain at the desired position.
 
 The caller can supply an ordered **provider chain**. For each requested name, the API consults the providers in order and uses the first value found. A provider reporting that the value is absent allows lookup to continue with the next provider.
 
@@ -68,7 +68,7 @@ A **missing value** means the variable is absent. An **empty value** means it ex
 
 Conversion interprets a retrieved value as the expected type, such as a string, integer, or boolean.
 
-Each conversion defines its accepted textual forms. A supplied value outside those forms is invalid. For example, an unrecognized boolean value should produce a conversion failure.
+Each type conversion defines the textual forms it accepts. A supplied value outside those forms is invalid. For example, an unrecognized boolean value should produce a conversion failure.
 
 Type conversion establishes the value's representation. Additional constraints, such as a port number's allowed range, belong to configuration validation.
 
@@ -76,7 +76,7 @@ Type conversion establishes the value's representation. Additional constraints, 
 
 #### Required Values and Defaults
 
-A required variable must be present. Its absence produces a mapped configuration failure.
+A required variable must be present. The absence of a required variable produces a mapped configuration failure.
 
 An explicit default, when supported, supplies an acceptable value when the variable is missing. An invalid supplied value still produces a failure; it does not activate the default.
 
@@ -104,7 +104,7 @@ Missing, invalid, and inaccessible variables represent different failure circums
 
 [Mapped exceptions](https://github.com/clean-arch-enablers-project/clean-mapped-exceptions/blob/feature/hello-world/concept/README.md) should identify the variable and the unmet expectation. Conversion or provider-access exceptions should be preserved as original causes when applicable.
 
-Failure classification reflects the configuration's role in the workflow. Diagnostic information should avoid exposing secret values.
+Configuration failures are classified according to what the missing, invalid, or inaccessible value means for the calling workflow. Diagnostic information should avoid exposing secret values.
 
 <br>
 
@@ -112,7 +112,7 @@ Failure classification reflects the configuration's role in the workflow. Diagno
 
 Environment access belongs where configuration is obtained and dependencies are assembled.
 
-Components receive the interpreted values they need. This makes their configuration requirements explicit and allows them to be exercised without changing the process environment.
+Application components receive the converted configuration values they need. This makes their configuration requirements explicit and allows them to be exercised without changing the process environment.
 
 <br>
 <br>
