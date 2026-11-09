@@ -102,7 +102,7 @@ flowchart TD
 
 Missing, invalid, and inaccessible variables represent different failure circumstances.
 
-Mapped exceptions should identify the variable and the unmet expectation. Conversion or provider-access exceptions should be preserved as original causes when applicable.
+[Mapped exceptions](https://github.com/clean-arch-enablers-project/clean-mapped-exceptions/blob/feature/hello-world/concept/README.md) should identify the variable and the unmet expectation. Conversion or provider-access exceptions should be preserved as original causes when applicable.
 
 Failure classification reflects the configuration's role in the workflow. Diagnostic information should avoid exposing secret values.
 
