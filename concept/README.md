@@ -72,6 +72,8 @@ Each type conversion defines the textual forms it accepts. A supplied value outs
 
 Type conversion establishes the value's representation. Additional constraints, such as a port number's allowed range, belong to configuration validation.
 
+Providers and conversions have separate responsibilities. A provider retrieves text from its configured source; the requested conversion interprets that text as an application value. Selecting an integer type therefore requires parsing the retrieved text, not merely treating the text as if it were already an integer.
+
 <br>
 
 #### Required Values and Defaults
@@ -79,6 +81,8 @@ Type conversion establishes the value's representation. Additional constraints, 
 A required variable must be present. The absence of a required variable produces a mapped configuration failure.
 
 An explicit default, when supported, supplies an acceptable value when the variable is missing. An invalid supplied value still produces a failure; it does not activate the default.
+
+An optional lookup can instead return absence when every provider reports the name missing and no default is supplied. The caller chooses whether absence is acceptable for that configuration requirement. A missing required value, an absent optional value, and an explicitly supplied default represent different outcomes.
 
 ```mermaid
 %%{init: {'theme': 'dark', 'themeVariables': {'lineColor': '#ffffff', 'edgeLabelBackground': '#000000', 'primaryTextColor': '#ffffff'}}}%%
@@ -113,6 +117,8 @@ Configuration failures are classified according to what the missing, invalid, or
 Environment access belongs where configuration is obtained and dependencies are assembled.
 
 Application components receive the converted configuration values they need. This makes their configuration requirements explicit and allows them to be exercised without changing the process environment.
+
+The calling code also decides when configuration is resolved. Reading a value during application assembly makes that result available to the assembled components; reading it again is a separate provider lookup. The retrieval API does not automatically update a value already supplied to an application component.
 
 <br>
 <br>
