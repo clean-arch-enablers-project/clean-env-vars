@@ -1,4 +1,4 @@
-<p align="center">CAE Concept</p>
+<p align="center">Clean Concept</p>
 
 ---
 
@@ -10,7 +10,7 @@ This concept defines how an application retrieves environment variables and conv
 
 A variable is identified by name and supplied as text. The application declares the type it expects and how absence should be handled.
 
-The environment-variable API can also resolve named configuration values through a configurable chain of providers, allowing configuration to come from the process environment, an external configuration service, or an application-defined source. This describes the intended contract; implementations are not yet available.
+The environment-variable API can also resolve named configuration values through a configurable chain of providers, allowing configuration to come from the process environment, an external configuration service, or an application-defined source.
 
 <br>
 

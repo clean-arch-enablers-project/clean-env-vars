@@ -1,0 +1,15 @@
+package com.cae.clean_env_vars;
+
+import java.util.Optional;
+
+/** Retrieves textual configuration values from an application-selected source. */
+@FunctionalInterface
+public interface EnvVarProvider {
+    /**
+     * Looks up a variable without converting its value.
+     * @param name the variable name
+     * @return a non-null optional; an empty string is a found value
+     * @throws Exception if the source cannot be accessed
+     */
+    Optional<String> get(String name) throws Exception;
+}
