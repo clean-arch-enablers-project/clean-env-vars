@@ -1,3 +1,9 @@
+<p align="center">CAE Artifact</p>
+
+---
+
+<br>
+
 # Clean Env Vars
 
 A common contract for retrieving environment variables and named configuration values, converting types, and handling missing values.
@@ -36,3 +42,10 @@ Checked items have implementation code in this repository. Unchecked items are r
 [Java publishing](.github/PUBLISHING.md) describes release verification, signing, Maven Central publication, and the required repository secrets.
 
 Licensed under [Apache License 2.0](LICENSE).
+
+<br>
+<br>
+
+---
+
+<p align="center">clean software, made easy.</p>

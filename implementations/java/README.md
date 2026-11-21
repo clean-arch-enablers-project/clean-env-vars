@@ -1,3 +1,9 @@
+<p align="center">CAE Java Version</p>
+
+---
+
+<br>
+
 # Clean Env Vars for Java
 
 Clean Env Vars is a standalone Java 25 LTS implementation of the [environment-variable concept](../../concept/README.md). It retrieves text from an ordered provider chain and converts it into configuration values. Its only runtime dependency is the published Clean Mapped Exceptions library.
@@ -130,3 +136,10 @@ Replace dependency coordinates and imports, review the stricter conversion rules
 Reports are written to `target/surefire-reports/` and `target/site/jacoco/`. For SonarQube, set `SONAR_HOST_URL` and `SONAR_TOKEN`, then run `mvn clean verify sonar:sonar`.
 
 Repository workflows cover [feature pull requests](../../.github/FEATURE_PRS.md), Java verification on PRs to `main`, and [Maven Central publishing](../../.github/PUBLISHING.md). The publishing guide lists the required repository secrets and activation settings.
+
+<br>
+<br>
+
+---
+
+<p align="center">clean software, made easy.</p>
