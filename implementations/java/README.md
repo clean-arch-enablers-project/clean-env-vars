@@ -4,11 +4,13 @@
 
 <br>
 
-# Clean Env Vars for Java
+### Clean Env Vars for Java
 
 Clean Env Vars is a standalone Java 25 LTS implementation of the [environment-variable concept](../../concept/README.md). It retrieves text from an ordered provider chain and converts it into configuration values. Its only runtime dependency is the published Clean Mapped Exceptions library.
 
-## Dependency and build
+<br>
+
+#### Dependency and build
 
 ```xml
 <dependency>
@@ -26,7 +28,9 @@ mvn -B -ntp -f implementations/java/pom.xml clean verify
 
 For local consumption before this artifact is published, use `mvn -f implementations/java/pom.xml install`. Its declared runtime dependency, `com.clean-arch-enablers:clean-mapped-exceptions:1.0.0-RC1`, is resolved from Maven Central. Workflows require published dependencies and never build another repository's sources.
 
-## Static lookups
+<br>
+
+#### Static lookups
 
 All lookups use the shared provider chain. It starts with the process environment:
 
@@ -51,7 +55,9 @@ Integer port = EnvVarRetriever.getOrDefault("APP_PORT", Integer.class, 8080);
 
 Each request performs a separate lookup and reads its providers' current values.
 
-## Configuring the provider chain
+<br>
+
+#### Configuring the provider chain
 
 An `EnvVarProvider` returns a non-null `Optional<String>` for a name and may throw an unchecked exception if its source is inaccessible. `Optional.empty()` means absent; `Optional.of("")` means found and empty.
 
@@ -78,13 +84,17 @@ While the chain is unlocked, `add` appends a custom provider and `remove` unregi
 
 Custom providers can use an application's configuration-service clients. If a client throws checked exceptions, the provider handles them or wraps them in an unchecked exception that preserves the cause, such as `UncheckedIOException` for an `IOException`. The library does not require an AWS client, framework, or dependency injection container.
 
-### Access failures
+<br>
+
+##### Access failures
 
 If a provider throws, lookup continues with later providers. If none supplies a value, the retriever throws `EnvVarAccessException` with the first provider exception as its cause and adds any later provider exceptions as suppressed exceptions. This applies to required, optional, and defaulted requests.
 
 A null provider result counts as a provider failure. Wrap an `InterruptedException` as the direct cause of an unchecked exception so the retriever restores the thread's interrupted flag and stops lookup. JVM `Error` instances propagate directly.
 
-## Conversion contract
+<br>
+
+#### Conversion contract
 
 | Requested class | Accepted input |
 | --- | --- |
@@ -98,7 +108,9 @@ Other classes, including primitive class tokens such as `int.class`, are rejecte
 
 Required lookup throws on absence. Optional lookup returns an empty optional only when every provider reports absence. A non-null typed default is used only for that same all-absent outcome. Found values must still convert successfully. Additional validation, such as checking a port's permitted range, belongs to the caller.
 
-## Failure information
+<br>
+
+#### Failure information
 
 | Exception in `com.cae.clean_env_vars.exceptions` | Meaning |
 | --- | --- |
@@ -112,7 +124,9 @@ Diagnostic details identify the variable and requested type without copying its 
 
 Exception classes rely on Java's generated serialization identifiers; no explicit `serialVersionUID` fields are declared.
 
-## Migration from CAE Env Vars
+<br>
+
+#### Migration from CAE Env Vars
 
 | CAE API or behavior | Clean API or behavior |
 | --- | --- |
@@ -129,7 +143,9 @@ The four static method names and `MissingEnvVarException` are retained under the
 
 Replace dependency coordinates and imports, review the stricter conversion rules, and recompile consumers. This is a separate artifact rather than a binary-compatible replacement.
 
-## Verification and automation
+<br>
+
+#### Verification and automation
 
 `mvn clean verify` enables `-Xlint:all,-serial`, fails on compiler and Javadoc warnings, runs unit tests, and enforces zero missed instructions, branches, lines, methods, and complexity for each production class without exclusions. Tests use custom in-memory providers and controlled process-environment fixtures rather than modifying JVM internals.
 
