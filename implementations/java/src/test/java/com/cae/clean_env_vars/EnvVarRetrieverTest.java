@@ -3,15 +3,17 @@ package com.cae.clean_env_vars;
 import com.cae.clean_env_vars.exceptions.EnvVarAccessException;
 import com.cae.clean_env_vars.exceptions.InvalidEnvVarException;
 import com.cae.clean_env_vars.exceptions.MissingEnvVarException;
-import com.cae.clean_env_vars.exceptions.UnexpectedException;
 import com.cae.clean_mapped_exceptions.specifics.InternalMappedException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,9 +21,25 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.cae.clean_env_vars.EnvVarRetriever.*;
 import static org.junit.jupiter.api.Assertions.*;
 
+@Isolated
 class EnvVarRetrieverTest {
+    private static final String TEST_PORT = "CLEAN_ENV_VARS_TEST_FIXTURE_PORT";
+    private static final String TEST_TEXT = "CLEAN_ENV_VARS_TEST_FIXTURE_TEXT";
+    private static final String TEST_FLAG = "CLEAN_ENV_VARS_TEST_FIXTURE_FLAG";
+    private static final String TEST_COUNT = "CLEAN_ENV_VARS_TEST_FIXTURE_COUNT";
+    private static final String TEST_N = "CLEAN_ENV_VARS_TEST_FIXTURE_N";
+    private static final String TEST_REMOTE = "CLEAN_ENV_VARS_TEST_FIXTURE_REMOTE";
+
+    private final List<EnvVarProvider> registeredProviders = new ArrayList<>();
+
+    @AfterEach
+    void removeRegisteredProviders() {
+        registeredProviders.forEach(EnvVarProviderChain.SINGLETON::remove);
+    }
+
     @Test
     void staticFacadeReadsAndConvertsActualEnvironment() {
         assertAll(
@@ -35,15 +53,13 @@ class EnvVarRetrieverTest {
     }
 
     @Test
-    void defaultRetrieverAndExplicitEnvironmentProviderReadTheActualEnvironment() {
+    void defaultChainAndEnvironmentProviderReadTheActualEnvironment() {
         var provider = new SystemEnvironmentProvider();
-        var retriever = new EnvVarRetriever(List.of(provider));
-        var defaults = new EnvVarRetriever();
         assertAll(
                 () -> assertEquals(Optional.of("test-value"), provider.get("CLEAN_ENV_VARS_TEST_TEXT")),
                 () -> assertEquals(Optional.of(""), provider.get("CLEAN_ENV_VARS_TEST_EMPTY")),
-                () -> assertEquals("test-value", retriever.getRequired("CLEAN_ENV_VARS_TEST_TEXT", String.class)),
-                () -> assertEquals(123, defaults.getRequired("CLEAN_ENV_VARS_TEST_INTEGER", Integer.class)),
+                () -> assertEquals("test-value", getRequired("CLEAN_ENV_VARS_TEST_TEXT", String.class)),
+                () -> assertEquals(123, getRequired("CLEAN_ENV_VARS_TEST_INTEGER", Integer.class)),
                 () -> assertThrows(NullPointerException.class, () -> provider.get(null)));
     }
 
@@ -59,28 +75,27 @@ class EnvVarRetrieverTest {
                 () -> assertTrue(provider.get(missingName).isEmpty()),
                 () -> assertThrows(MissingEnvVarException.class,
                         () -> EnvVarRetriever.getEnvVarByNameAsString(missingName)),
-                () -> assertEquals(Optional.of(""), new EnvVarRetriever()
-                        .getOptional("CLEAN_ENV_VARS_TEST_EMPTY", String.class)));
+                () -> assertEquals(Optional.of(""), getOptional("CLEAN_ENV_VARS_TEST_EMPTY", String.class)));
     }
 
     @Test
     void requiredOptionalAndDefaultRepresentDifferentAbsentOutcomes() {
-        var retriever = new EnvVarRetriever(List.of(name -> Optional.empty()));
+        register(name -> Optional.empty());
         var missing = assertThrows(MissingEnvVarException.class,
-                () -> retriever.getRequired("PORT", Integer.class));
+                () -> getRequired(TEST_PORT, Integer.class));
         assertAll(
                 () -> assertInstanceOf(InternalMappedException.class, missing),
-                () -> assertTrue(missing.getDetails().orElseThrow().contains("PORT")),
-                () -> assertTrue(retriever.getOptional("PORT", Integer.class).isEmpty()),
-                () -> assertEquals(8080, retriever.getOrDefault("PORT", Integer.class, 8080)),
-                () -> assertEquals("default", retriever.getOrDefault("TEXT", String.class, "default")),
-                () -> assertFalse(retriever.getOrDefault("FLAG", Boolean.class, false)));
+                () -> assertTrue(missing.getDetails().orElseThrow().contains(TEST_PORT)),
+                () -> assertTrue(getOptional(TEST_PORT, Integer.class).isEmpty()),
+                () -> assertEquals(8080, getOrDefault(TEST_PORT, Integer.class, 8080)),
+                () -> assertEquals("default", getOrDefault(TEST_TEXT, String.class, "default")),
+                () -> assertFalse(getOrDefault(TEST_FLAG, Boolean.class, false)));
     }
 
     @Test
     void firstFoundValueWinsAndReceivesTheExactName() {
         var requested = new ArrayList<String>();
-        var retriever = new EnvVarRetriever(List.of(
+        register(
                 name -> {
                     requested.add("first:" + name);
                     return Optional.empty();
@@ -89,80 +104,87 @@ class EnvVarRetrieverTest {
                     requested.add("second:" + name);
                     return Optional.of("42");
                 },
-                name -> fail("Lookup must stop after the first found value")));
+                name -> fail("Lookup must stop after the first found value"));
         assertAll(
-                () -> assertEquals(42, retriever.getRequired("PORT", Integer.class)),
-                () -> assertEquals(List.of("first:PORT", "second:PORT"), requested));
+                () -> assertEquals(42, getRequired(TEST_PORT, Integer.class)),
+                () -> assertEquals(List.of("first:" + TEST_PORT, "second:" + TEST_PORT), requested));
     }
 
     @Test
-    void customChainDoesNotImplicitlyInsertProcessEnvironment() {
-        var retriever = values(Map.of());
-        assertTrue(retriever.getOptional("CLEAN_ENV_VARS_TEST_TEXT", String.class).isEmpty());
+    void staticLookupMethodsUseRegisteredProviders() {
+        values(Map.of("CLEAN_ENV_VARS_TEST_CUSTOM_TEXT", "custom", "CLEAN_ENV_VARS_TEST_CUSTOM_FLAG", "true",
+                "CLEAN_ENV_VARS_TEST_CUSTOM_NUMBER", "17"));
+        assertAll(
+                () -> assertEquals("custom", getEnvVarByNameAsString("CLEAN_ENV_VARS_TEST_CUSTOM_TEXT")),
+                () -> assertTrue(getEnvVarByNameAsBoolean("CLEAN_ENV_VARS_TEST_CUSTOM_FLAG")),
+                () -> assertEquals(17, getEnvVarByNameAsInteger("CLEAN_ENV_VARS_TEST_CUSTOM_NUMBER")),
+                () -> assertEquals(17, getEnvVarByName("CLEAN_ENV_VARS_TEST_CUSTOM_NUMBER", Integer.class)));
     }
 
     @Test
-    void environmentProviderCanAppearAfterApplicationProvider() {
-        var retriever = new EnvVarRetriever(List.<EnvVarProvider>of(
-                name -> Optional.empty(), new SystemEnvironmentProvider()));
-        assertEquals("test-value", retriever.getRequired("CLEAN_ENV_VARS_TEST_TEXT", String.class));
+    void environmentProviderHasPriorityOverAppendedProviders() {
+        register(name -> fail("The process environment already supplied this value"));
+        assertEquals("test-value", getRequired("CLEAN_ENV_VARS_TEST_TEXT", String.class));
     }
 
     @Test
     void foundValuesOverrideDefaultsWithoutTrimming() {
-        var retriever = values(Map.of("TEXT", "  value  ", "COUNT", "7", "FLAG", "false"));
+        values(Map.of(TEST_TEXT, "  value  ", TEST_COUNT, "7", TEST_FLAG, "false"));
         assertAll(
-                () -> assertEquals("  value  ", retriever.getOrDefault("TEXT", String.class, "fallback")),
-                () -> assertEquals(7, retriever.getOrDefault("COUNT", Integer.class, 9)),
-                () -> assertFalse(retriever.getOrDefault("FLAG", Boolean.class, true)));
+                () -> assertEquals("  value  ", getOrDefault(TEST_TEXT, String.class, "fallback")),
+                () -> assertEquals(7, getOrDefault(TEST_COUNT, Integer.class, 9)),
+                () -> assertFalse(getOrDefault(TEST_FLAG, Boolean.class, true)));
     }
 
     @Test
     void emptyStringIsFoundAndDoesNotAdvanceTheChainOrSelectDefault() {
-        var retriever = new EnvVarRetriever(List.of(
+        register(
                 name -> Optional.of(""),
-                name -> fail("An empty value must stop lookup")));
+                name -> fail("An empty value must stop lookup"));
         assertAll(
-                () -> assertEquals("", retriever.getOrDefault("TEXT", String.class, "fallback")),
+                () -> assertEquals("", getOrDefault(TEST_TEXT, String.class, "fallback")),
                 () -> assertThrows(InvalidEnvVarException.class,
-                        () -> retriever.getOrDefault("COUNT", Integer.class, 9)),
+                        () -> getOrDefault(TEST_COUNT, Integer.class, 9)),
                 () -> assertThrows(InvalidEnvVarException.class,
-                        () -> retriever.getOptional("FLAG", Boolean.class)));
+                        () -> getOptional(TEST_FLAG, Boolean.class)));
     }
 
     @Test
     void invalidFoundValuesDoNotAdvanceTheChainOrSelectDefault() {
-        var retriever = new EnvVarRetriever(List.of(
+        register(
                 name -> Optional.of("invalid"),
-                name -> fail("Conversion failure must not fall through to another source")));
+                name -> fail("Conversion failure must not fall through to another source"));
         assertThrows(InvalidEnvVarException.class,
-                () -> retriever.getOrDefault("PORT", Integer.class, 8080));
+                () -> getOrDefault(TEST_PORT, Integer.class, 8080));
     }
 
     @ParameterizedTest
     @CsvSource({"0,0", "+42,42", "-42,-42", "0007,7", "-0,0",
             "2147483647,2147483647", "-2147483648,-2147483648"})
     void parsesSignedDecimalIntegers(String text, int expected) {
-        assertEquals(expected, values(Map.of("N", text)).getRequired("N", Integer.class));
+        values(Map.of(TEST_N, text));
+        assertEquals(expected, getRequired(TEST_N, Integer.class));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"", " ", " 1", "1 ", "1.5", "1e2", "0x10", "1_000", "+", "--1", "١", "secret-value"})
     void rejectsInvalidIntegerFormsWithoutLeakingValues(String text) {
+        values(Map.of(TEST_COUNT, text));
         var failure = assertThrows(InvalidEnvVarException.class,
-                () -> values(Map.of("COUNT", text)).getRequired("COUNT", Integer.class));
+                () -> getRequired(TEST_COUNT, Integer.class));
         assertAll(
                 () -> assertInstanceOf(IllegalArgumentException.class, failure.getCause()),
                 () -> assertEquals("Expected a signed base-10 integer without whitespace", failure.getCause().getMessage()),
-                () -> assertTrue(failure.getDetails().orElseThrow().contains("COUNT")),
+                () -> assertTrue(failure.getDetails().orElseThrow().contains(TEST_COUNT)),
                 () -> assertTrue(failure.getDetails().orElseThrow().contains("Integer")));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"2147483648", "-2147483649", "999999999999999999999999999999999"})
     void rejectsIntegerOverflowWithoutIncludingTheSuppliedValue(String text) {
+        values(Map.of(TEST_COUNT, text));
         var failure = assertThrows(InvalidEnvVarException.class,
-                () -> values(Map.of("COUNT", text)).getRequired("COUNT", Integer.class));
+                () -> getRequired(TEST_COUNT, Integer.class));
         assertAll(
                 () -> assertInstanceOf(ArithmeticException.class, failure.getCause()),
                 () -> assertFalse(failure.getMessage().contains(text)),
@@ -172,106 +194,104 @@ class EnvVarRetrieverTest {
     @ParameterizedTest
     @CsvSource({"true,true", "TRUE,true", "TrUe,true", "false,false", "FALSE,false", "FaLsE,false"})
     void parsesOnlyRecognizedBooleanWordsIgnoringCase(String text, boolean expected) {
-        assertEquals(expected, values(Map.of("FLAG", text)).getRequired("FLAG", Boolean.class));
+        values(Map.of(TEST_FLAG, text));
+        assertEquals(expected, getRequired(TEST_FLAG, Boolean.class));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"", " ", "1", "0", "yes", "no", " true", "false ", "secret-value"})
     void rejectsUnrecognizedBooleansInsteadOfSilentlyReturningFalse(String text) {
+        values(Map.of(TEST_FLAG, text));
         var failure = assertThrows(InvalidEnvVarException.class,
-                () -> values(Map.of("FLAG", text)).getOrDefault("FLAG", Boolean.class, false));
+                () -> getOrDefault(TEST_FLAG, Boolean.class, false));
         assertEquals("Expected true or false without whitespace", failure.getCause().getMessage());
     }
 
     @Test
     void stringValuesArePreservedVerbatim() {
         var secret = "private-config-value-例";
-        var retriever = values(Map.of("TEXT", secret));
-        assertEquals(secret, retriever.getRequired("TEXT", String.class));
+        values(Map.of(TEST_TEXT, secret));
+        assertEquals(secret, getRequired(TEST_TEXT, String.class));
     }
 
     @Test
-    void providerFailuresStopLookupByDefaultAndRetainOriginalCause() {
-        var original = new IOException("Service unavailable");
-        var retriever = new EnvVarRetriever(List.of(
-                name -> { throw original; },
-                name -> fail("Fail-fast lookup must stop")));
+    void unresolvedProviderFailureRetainsOriginalCause() {
+        var ioFailure = new IOException("Service unavailable");
+        var original = new UncheckedIOException(ioFailure);
+        register(name -> { throw original; });
         var failure = assertThrows(EnvVarAccessException.class,
-                () -> retriever.getOrDefault("REMOTE", String.class, "default"));
+                () -> getOrDefault(TEST_REMOTE, String.class, "default"));
         assertAll(
-                () -> assertInstanceOf(UnexpectedException.class, failure),
                 () -> assertSame(original, failure.getCause()),
+                () -> assertSame(ioFailure, failure.getCause().getCause()),
                 () -> assertSame(original, failure.getOriginalException().orElseThrow()),
-                () -> assertTrue(failure.getDetails().orElseThrow().contains("REMOTE")));
+                () -> assertTrue(failure.getDetails().orElseThrow().contains(TEST_REMOTE)));
     }
 
     @Test
-    void explicitContinuationCanRecoverFromAnInaccessibleProvider() {
-        var retriever = new EnvVarRetriever(List.of(
-                name -> { throw new IOException("Remote unavailable"); },
-                name -> Optional.of("17")),
-                ProviderFailurePolicy.CONTINUE);
-        assertEquals(17, retriever.getRequired("COUNT", Integer.class));
+    void lookupCanRecoverFromAnInaccessibleProvider() {
+        register(
+                name -> { throw new IllegalStateException("Remote unavailable"); },
+                name -> Optional.of("17"));
+        assertEquals(17, getRequired(TEST_COUNT, Integer.class));
     }
 
     @Test
     void continuationDoesNotTurnUnresolvedAccessFailuresIntoAbsence() {
-        var original = new IOException("First unavailable");
+        var original = new IllegalStateException("First unavailable");
         var second = new IllegalStateException("Second unavailable");
-        var retriever = new EnvVarRetriever(List.of(
+        register(
                 name -> { throw original; },
                 name -> Optional.empty(),
-                name -> { throw second; }),
-                ProviderFailurePolicy.CONTINUE);
+                name -> { throw second; });
         var failure = assertThrows(EnvVarAccessException.class,
-                () -> retriever.getOrDefault("REMOTE", Integer.class, 42));
+                () -> getOrDefault(TEST_REMOTE, Integer.class, 42));
         assertAll(
                 () -> assertSame(original, failure.getCause()),
                 () -> assertEquals(List.of(second), List.of(failure.getSuppressed())),
                 () -> assertThrows(EnvVarAccessException.class,
-                        () -> retriever.getOptional("REMOTE", String.class)));
+                        () -> getOptional(TEST_REMOTE, String.class)));
     }
 
     @Test
     void continuationWithOnlyAbsentProvidersAllowsOptionalAndDefault() {
-        var retriever = new EnvVarRetriever(List.of(name -> Optional.empty()),
-                ProviderFailurePolicy.CONTINUE);
+        register(name -> Optional.empty());
         assertAll(
-                () -> assertTrue(retriever.getOptional("COUNT", Integer.class).isEmpty()),
-                () -> assertEquals(9, retriever.getOrDefault("COUNT", Integer.class, 9)));
+                () -> assertTrue(getOptional(TEST_COUNT, Integer.class).isEmpty()),
+                () -> assertEquals(9, getOrDefault(TEST_COUNT, Integer.class, 9)));
     }
 
     @Test
     void continuationStillRejectsTheFirstFoundInvalidValue() {
-        var retriever = new EnvVarRetriever(List.of(
-                name -> { throw new IOException("Unavailable"); },
+        register(
+                name -> { throw new IllegalStateException("Unavailable"); },
                 name -> Optional.of("not-an-integer"),
-                name -> fail("A found value must be converted without source fallback")),
-                ProviderFailurePolicy.CONTINUE);
-        assertThrows(InvalidEnvVarException.class, () -> retriever.getRequired("COUNT", Integer.class));
+                name -> fail("A found value must be converted without source fallback"));
+        assertThrows(InvalidEnvVarException.class, () -> getRequired(TEST_COUNT, Integer.class));
     }
 
     @Test
     void invalidProviderResultIsAnAccessFailureRatherThanAbsence() {
-        var retriever = new EnvVarRetriever(List.of(name -> null));
+        register(name -> null);
         var failure = assertThrows(EnvVarAccessException.class,
-                () -> retriever.getOptional("COUNT", Integer.class));
+                () -> getOptional(TEST_COUNT, Integer.class));
         assertInstanceOf(NullPointerException.class, failure.getCause());
     }
 
     @Test
     void interruptionRestoresFlagAndStopsEvenAContinuingChain() {
         var interrupted = new InterruptedException("Canceled");
-        var retriever = new EnvVarRetriever(List.of(
-                name -> { throw interrupted; },
-                name -> fail("Interruption must stop provider lookup")),
-                ProviderFailurePolicy.CONTINUE);
+        var original = new IllegalStateException(interrupted);
+        register(
+                name -> { throw original; },
+                name -> fail("Interruption must stop provider lookup"));
         try {
             var failure = assertThrows(EnvVarAccessException.class,
-                    () -> retriever.getRequired("REMOTE", String.class));
+                    () -> getRequired(TEST_REMOTE, String.class));
             assertAll(
                     () -> assertTrue(Thread.currentThread().isInterrupted()),
-                    () -> assertSame(interrupted, failure.getCause()));
+                    () -> assertSame(original, failure.getCause()),
+                    () -> assertSame(interrupted, failure.getCause().getCause()));
         } finally {
             Thread.interrupted();
         }
@@ -280,35 +300,91 @@ class EnvVarRetrieverTest {
     @Test
     void jvmErrorsPropagateWithoutTryingAnotherProvider() {
         var fatal = new AssertionError("Fatal");
-        var retriever = new EnvVarRetriever(List.of(
+        register(
                 name -> { throw fatal; },
-                name -> fail("Errors must propagate")),
-                ProviderFailurePolicy.CONTINUE);
+                name -> fail("Errors must propagate"));
         assertSame(fatal, assertThrows(AssertionError.class,
-                () -> retriever.getRequired("REMOTE", String.class)));
+                () -> getRequired(TEST_REMOTE, String.class)));
     }
 
     @Test
-    void providerChainIsAnIndependentSnapshot() {
-        var providers = new ArrayList<EnvVarProvider>();
-        providers.add(name -> Optional.of("first"));
-        var retriever = new EnvVarRetriever(providers);
-        providers.clear();
-        providers.add(name -> Optional.of("replacement"));
-        assertEquals("first", retriever.getRequired("TEXT", String.class));
+    void lookupSeesProviderChangesOnTheNextRequest() {
+        var chain = EnvVarProviderChain.SINGLETON;
+        EnvVarProvider temporary = name -> Optional.of("first");
+        register(temporary);
+        assertEquals("first", getRequired(TEST_TEXT, String.class));
+        assertTrue(chain.remove(temporary));
+        assertTrue(getOptional(TEST_TEXT, String.class).isEmpty());
+        register(name -> Optional.of("replacement"));
+        assertEquals("replacement", getRequired(TEST_TEXT, String.class));
+    }
+
+    @Test
+    void lookupKeepsItsProviderOrderWhenRegistrationChangesMidRequest() {
+        var chain = EnvVarProviderChain.SINGLETON;
+        EnvVarProvider laterProvider = name -> Optional.of("first request");
+        register(name -> {
+            chain.remove(laterProvider);
+            return Optional.empty();
+        }, laterProvider);
+
+        assertEquals("first request", getRequired(TEST_TEXT, String.class));
+        assertTrue(getOptional(TEST_TEXT, String.class).isEmpty());
+    }
+
+    @Test
+    void chainRejectsDuplicatesAndKeepsTheProcessEnvironmentProvider() {
+        var chain = EnvVarProviderChain.SINGLETON;
+        var systemProvider = assertInstanceOf(SystemEnvironmentProvider.class, chain.snapshot().getFirst());
+        var lookups = new AtomicInteger();
+        EnvVarProvider provider = name -> {
+            lookups.incrementAndGet();
+            return Optional.empty();
+        };
+        register(provider);
+        assertAll(
+                () -> assertFalse(chain.add(provider)),
+                () -> assertFalse(chain.add(new SystemEnvironmentProvider())),
+                () -> assertFalse(chain.remove(systemProvider)),
+                () -> assertEquals(List.of(systemProvider, provider), chain.snapshot()),
+                () -> assertTrue(getOptional(TEST_TEXT, String.class).isEmpty()),
+                () -> assertEquals(1, lookups.get()),
+                () -> assertThrows(InternalMappedException.class, () -> chain.add(null)),
+                () -> assertThrows(InternalMappedException.class, () -> chain.remove(null)));
+    }
+
+    @Test
+    void lockingFreezesRegistrationAndPreservesProviders() throws ReflectiveOperationException {
+        // Exercise the one-way lock without permanently changing the test JVM's shared chain.
+        var constructor = EnvVarProviderChain.class.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        var chain = constructor.newInstance();
+        EnvVarProvider provider = name -> Optional.empty();
+        assertTrue(chain.add(provider));
+        var beforeLock = chain.snapshot();
+        assertFalse(chain.isLocked());
+
+        chain.lock();
+        chain.lock();
+
+        assertAll(
+                () -> assertTrue(chain.isLocked()),
+                () -> assertThrows(InternalMappedException.class, () -> chain.add(name -> Optional.empty())),
+                () -> assertThrows(InternalMappedException.class, () -> chain.remove(provider)),
+                () -> assertEquals(beforeLock, chain.snapshot()));
     }
 
     @Test
     void eachRequestLooksUpItsValueAgainWithoutChangingPreviouslyReturnedValues() {
         var supplied = new AtomicReference<>("before");
         var lookups = new AtomicInteger();
-        var retriever = new EnvVarRetriever(List.of(name -> {
+        register(name -> {
             lookups.incrementAndGet();
             return Optional.of(supplied.get());
-        }));
-        var first = retriever.getRequired("TEXT", String.class);
+        });
+        var first = getRequired(TEST_TEXT, String.class);
         supplied.set("after");
-        var second = retriever.getRequired("TEXT", String.class);
+        var second = getRequired(TEST_TEXT, String.class);
         assertAll(
                 () -> assertEquals("before", first),
                 () -> assertEquals("after", second),
@@ -319,46 +395,57 @@ class EnvVarRetrieverTest {
     @NullAndEmptySource
     @ValueSource(strings = {" ", "\t", "BAD=NAME", "BAD\0NAME"})
     void rejectsInvalidNamesBeforeConsultingProviders(String name) {
-        var retriever = new EnvVarRetriever(List.of(ignored -> fail("Invalid requests must not access providers")));
-        assertThrows(RuntimeException.class, () -> retriever.getOptional(name, String.class));
+        register(ignored -> fail("Invalid requests must not access providers"));
+        assertThrows(RuntimeException.class, () -> getOptional(name, String.class));
     }
 
     @Test
     void rejectsUnsupportedTypesBeforeConsultingProviders() {
-        var retriever = new EnvVarRetriever(List.of(name -> fail("Unsupported types must not access providers")));
+        register(name -> fail("Unsupported types must not access providers"));
         assertAll(
-                () -> assertThrows(IllegalArgumentException.class, () -> retriever.getRequired("N", Long.class)),
-                () -> assertThrows(IllegalArgumentException.class, () -> retriever.getRequired("N", int.class)),
-                () -> assertThrows(NullPointerException.class, () -> retriever.getOptional("N", null)),
-                () -> assertThrows(NullPointerException.class, () -> retriever.getOrDefault("N", String.class, null)));
+                () -> assertThrows(IllegalArgumentException.class, () -> getRequired(TEST_N, Long.class)),
+                () -> assertThrows(IllegalArgumentException.class, () -> getRequired(TEST_N, int.class)),
+                () -> assertThrows(NullPointerException.class, () -> getOptional(TEST_N, null)),
+                () -> assertThrows(NullPointerException.class, () -> getOrDefault(TEST_N, String.class, null)));
     }
 
     @Test
-    void rejectsInvalidProviderConfiguration() {
-        var absent = (EnvVarProvider) name -> Optional.empty();
-        assertAll(
-                () -> assertThrows(NullPointerException.class, () -> new EnvVarRetriever(null)),
-                () -> assertThrows(IllegalArgumentException.class, () -> new EnvVarRetriever(List.of())),
-                () -> assertThrows(NullPointerException.class,
-                        () -> new EnvVarRetriever(java.util.Arrays.asList(absent, null))),
-                () -> assertThrows(NullPointerException.class,
-                        () -> new EnvVarRetriever(List.of(absent), null)));
-    }
-
-    @Test
-    void publicExceptionConstructorsRetainOriginalsAndValidateArguments() {
+    void accessExceptionConstructorRetainsCauseAndValidatesArguments() {
         var original = new IOException("Unavailable");
-        var failure = new UnexpectedException(original, "REMOTE", String.class);
+        var failure = new EnvVarAccessException(original, TEST_REMOTE, String.class);
         assertAll(
                 () -> assertSame(original, failure.getCause()),
-                () -> assertInstanceOf(InternalMappedException.class, failure),
-                () -> assertThrows(NullPointerException.class, () -> new MissingEnvVarException(null)),
-                () -> assertThrows(NullPointerException.class, () -> new UnexpectedException(null, "N", String.class)),
-                () -> assertThrows(NullPointerException.class, () -> new UnexpectedException(original, null, String.class)),
-                () -> assertThrows(NullPointerException.class, () -> new UnexpectedException(original, "N", null)));
+                () -> assertSame(InternalMappedException.class, EnvVarAccessException.class.getSuperclass()),
+                () -> assertThrows(NullPointerException.class, () -> new EnvVarAccessException(null, TEST_REMOTE, String.class)),
+                () -> assertThrows(NullPointerException.class, () -> new EnvVarAccessException(original, null, String.class)),
+                () -> assertThrows(NullPointerException.class, () -> new EnvVarAccessException(original, TEST_REMOTE, null)));
     }
 
-    private static EnvVarRetriever values(Map<String, String> values) {
-        return new EnvVarRetriever(List.of(name -> Optional.ofNullable(values.get(name))));
+    @Test
+    void invalidExceptionConstructorRetainsCauseAndValidatesArguments() {
+        var original = new NumberFormatException();
+        var failure = new InvalidEnvVarException(original, TEST_PORT, Integer.class);
+        assertAll(
+                () -> assertSame(original, failure.getCause()),
+                () -> assertSame(InternalMappedException.class, InvalidEnvVarException.class.getSuperclass()),
+                () -> assertThrows(NullPointerException.class, () -> new InvalidEnvVarException(null, TEST_PORT, Integer.class)),
+                () -> assertThrows(NullPointerException.class, () -> new InvalidEnvVarException(original, null, Integer.class)),
+                () -> assertThrows(NullPointerException.class, () -> new InvalidEnvVarException(original, TEST_PORT, null)));
+    }
+
+    @Test
+    void missingExceptionConstructorRequiresName() {
+        assertThrows(NullPointerException.class, () -> new MissingEnvVarException(null));
+    }
+
+    private void values(Map<String, String> values) {
+        register(name -> Optional.ofNullable(values.get(name)));
+    }
+
+    private void register(EnvVarProvider... providers) {
+        for (var provider : providers) {
+            assertTrue(EnvVarProviderChain.SINGLETON.add(provider));
+            registeredProviders.add(provider);
+        }
     }
 }
