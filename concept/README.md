@@ -28,11 +28,11 @@ This approach works in a script, a command-line tool, or a framework-based appli
 
 A **provider** looks up a named value in a particular source. Beyond the built-in environment provider, applications can supply custom providers backed by their chosen clients or application logic. A provider that retrieves values from AWS Systems Manager Parameter Store is one example of a custom provider, rather than a required or built-in integration.
 
-Each programming-language implementation must provide a built-in provider that reads the runtime's actual environment variables. The built-in environment provider is the default source when the caller does not configure a provider chain. The caller can also include that provider in a custom chain at the desired position.
+Each programming-language implementation must provide a built-in provider that reads the runtime's actual environment variables. The built-in environment provider is the default source when the caller does not register custom providers. Each implementation defines where the built-in provider appears in the chain.
 
 The caller can supply an ordered **provider chain**. For each requested name, the API consults the providers in order and uses the first value found. A provider reporting that the value is absent allows lookup to continue with the next provider.
 
-For example, a chain could check the built-in environment provider first, a custom provider backed by AWS Systems Manager Parameter Store second, and another custom provider last. This allows local overrides while keeping the calling code independent of the source that supplies the value. Applications choose their own providers and precedence.
+For example, a chain could check the built-in environment provider first, a custom provider backed by AWS Systems Manager Parameter Store second, and another custom provider last. This allows local overrides while keeping the calling code independent of the source that supplies the value. Applications choose their custom providers and their order.
 
 ```mermaid
 %%{init: {'theme': 'dark', 'themeVariables': {'lineColor': '#ffffff', 'edgeLabelBackground': '#000000', 'primaryTextColor': '#ffffff'}}}%%
